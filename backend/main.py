@@ -145,19 +145,29 @@ async def sync_classpass_database():
 @app.get("/api/classpass/search")
 async def search_classpass_rpa(q: str, time: Optional[str] = None):
     try:
-        # 1. Si el caché está fresco (menos de 15 minutos), responder inmediatamente
-        if database.is_cache_fresh(max_age_minutes=15):
-            cached_data = database.query_cache_user(q)
+        # 1. Buscar SIEMPRE primero en la base de datos local (Independiente del tiempo transcurrido)
+        # Si el alumno ya fue mapeado hoy, responderemos en 1ms, evitando encender el bot innecesariamente.
+        cached_data = database.query_cache_user(q)
+        if cached_data:
             return {
                 "status": "success", 
                 "source": "cache",
                 "data": cached_data
             }
         
-        # 2. De lo contrario, hacer búsqueda en vivo usando el RPA
+        # 2. Si no está en la DB, pero el caché masivo se hizo hace menos de 15 minutos,
+        # podemos dar por seguro que no está inscrito hoy (sin tener que encender el bot).
+        if database.is_cache_fresh(max_age_minutes=15):
+            return {
+                "status": "success", 
+                "source": "cache",
+                "data": []
+            }
+        
+        # 3. Solo si NO está en la DB y el caché general está expirado, cae de respaldo al bot RPA en vivo
         results = await scraper.search_user(q, time)
         
-        # 3. Guardar el resultado en caché para futuras consultas rápidas
+        # 4. Si el bot en vivo encuentra al usuario, lo guardamos en caché de inmediato
         if results:
             today_str = datetime.now().strftime("%Y-%m-%d")
             db_entries = []
