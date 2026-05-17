@@ -316,13 +316,33 @@ async def sync_all_classes():
             total_classes = len(class_items)
             log(f"Iniciando barrido masivo de {total_classes} clases...")
             
-            today_str = datetime.now().strftime("%Y-%m-%d")
+            # Calcular la hora actual y restar 1 hora (margen de seguridad)
+            now = datetime.now()
+            today_str = now.strftime("%Y-%m-%d")
+            current_mins = now.hour * 60 + now.minute
+            safety_mins = current_mins - 60 # Ventana de 1 hora de anticipación para reservas
             
             for idx in range(total_classes):
                 items = await page.locator('.schedule-list__item').all()
                 if idx >= len(items): break
                 
                 item = items[idx]
+                
+                # Optimización extrema: Leer la hora del item de la lista principal antes de hacer click
+                list_text = await item.inner_text()
+                import re
+                time_match = re.search(r'(\d{1,2}:\d{2})', list_text)
+                if time_match:
+                    class_time_str = time_match.group(1)
+                    try:
+                        c_parts = class_time_str.split(':')
+                        class_mins = int(c_parts[0]) * 60 + int(c_parts[1])
+                        
+                        # Si la clase comenzó o cerró inscripciones hace más de 1 hora, se salta
+                        if class_mins < safety_mins:
+                            continue
+                    except Exception as e_time:
+                        log(f"Error procesando hora de item en sync masiva: {e_time}")
                 
                 clicked_successfully = False
                 try:
