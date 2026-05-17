@@ -1,10 +1,18 @@
 import asyncio
 import os
+from datetime import datetime
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 
 # Cargar variables de entorno locales
 load_dotenv()
+
+def log(msg: str):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_msg = f"[{timestamp}] {msg}"
+    print(log_msg)
+    with open("bot_debug.log", "a", encoding="utf-8") as f:
+        f.write(log_msg + "\n")
 
 async def sync_classpass():
     print("Iniciando bot de sincronización...")
@@ -65,13 +73,6 @@ async def search_user(query: str, target_time: str = None):
     import unicodedata
     import os
     from datetime import datetime
-    
-    def log(msg: str):
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_msg = f"[{timestamp}] {msg}"
-        print(log_msg)
-        with open("bot_debug.log", "a", encoding="utf-8") as f:
-            f.write(log_msg + "\n")
             
     if target_time:
         log(f"Iniciando bot RPA para buscar a: {query} a las {target_time}")
@@ -318,6 +319,15 @@ async def sync_all_classes():
             
             # Calcular la hora actual y restar 1 hora (margen de seguridad)
             now = datetime.now()
+            import os
+            mock_hour = os.getenv("MOCK_HOUR")
+            if mock_hour:
+                try:
+                    h, m = map(int, mock_hour.split(':'))
+                    now = now.replace(hour=h, minute=m)
+                    log(f"[MOCK_HOUR] HORA SIMULADA PARA PRUEBA: {now.strftime('%H:%M')}")
+                except Exception as e_mock:
+                    log(f"Error parseando MOCK_HOUR: {e_mock}")
             today_str = now.strftime("%Y-%m-%d")
             current_mins = now.hour * 60 + now.minute
             safety_mins = current_mins - 60 # Ventana de 1 hora de anticipación para reservas
