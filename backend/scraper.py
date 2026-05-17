@@ -174,14 +174,26 @@ async def search_user(query: str, target_time: str = None):
                         log(f"No se encontró hora en list_text: {list_text[:30]}")
                         
                 # Optimización de velocidad extrema: Esperar dinámicamente la respuesta de la API en lugar de un tiempo fijo
+                # Intentar hacer clic de forma ultra segura con timeout corto (2 segundos)
+                # Esto evita que el bot se quede pegado 30 segundos si la clase ya pasó y está deshabilitada (inclickeable)
+                clicked_successfully = False
                 try:
                     async with page.expect_response(lambda r: r.request.resource_type in ["fetch", "xhr"], timeout=800):
-                        await item.click()
-                    await page.wait_for_timeout(150) # Darle 150ms a React para dibujar los nombres tras recibir los datos
-                except:
-                    # Si no hubo petición (datos en caché) o tardó mucho, hacemos un pequeño fallback de seguridad
-                    await item.click()
-                    await page.wait_for_timeout(350)
+                        await item.click(timeout=2000)
+                    await page.wait_for_timeout(150) # Darle 150ms a React para dibujar
+                    clicked_successfully = True
+                except Exception as e_click1:
+                    # Fallback si no hubo petición o tardó en responder
+                    try:
+                        await item.click(timeout=2000)
+                        await page.wait_for_timeout(350)
+                        clicked_successfully = True
+                    except Exception as e_click2:
+                        log(f"No se pudo hacer clic en la clase (inclickeable, posiblemente pasada o cancelada): {e_click2}")
+                
+                if not clicked_successfully:
+                    log("Saltando clase por no ser clickeable.")
+                    continue
                 
                 class_name_el = page.locator('.schedule-detail p.text--semibold.text--ellipsis').first
                 class_time_el = page.locator('.schedule-detail p.text--semibold:not(.text--ellipsis)').first
