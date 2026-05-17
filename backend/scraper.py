@@ -88,48 +88,79 @@ async def search_user(query: str, target_time: str = None):
                 "--disable-setuid-sandbox"
             ]
         )
-        context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            viewport={"width": 1280, "height": 800},
-            locale="es-CL",
-            timezone_id="America/Santiago"
-        )
+        state_file = "state.json"
+        
+        # Intentar cargar la sesión si existe para saltar el login
+        if os.path.exists(state_file):
+            context = await browser.new_context(
+                storage_state=state_file,
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                viewport={"width": 1280, "height": 800},
+                locale="es-CL",
+                timezone_id="America/Santiago"
+            )
+        else:
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                viewport={"width": 1280, "height": 800},
+                locale="es-CL",
+                timezone_id="America/Santiago"
+            )
+            
         page = await context.new_page()
         
         try:
-            log("Navegando a login de ClassPass...")
-            await page.goto("https://studios.classpass.com/login")
-            await page.wait_for_timeout(2000)
+            logged_in = False
+            # Si hay sesión guardada, intentar ir directo a la lista de clases
+            if os.path.exists(state_file):
+                try:
+                    log("Intentando navegar directamente usando la sesión guardada...")
+                    await page.goto("https://studios.classpass.com/classes/", wait_until="domcontentloaded")
+                    # Verificar si cargó la lista de horarios (si no, nos redireccionó al login)
+                    await page.wait_for_selector('.schedule-list__item', state="visible", timeout=6000)
+                    logged_in = True
+                    log("Sesión activa recuperada exitosamente. Saltando flujo de login.")
+                except Exception as e:
+                    log("La sesión guardada expiró o no es válida. Iniciando login desde cero...")
             
-            try:
-                await page.click('button:has-text("De acuerdo")', timeout=3000)
-                log("Banner de cookies aceptado.")
-            except:
-                log("Banner de cookies no encontrado, continuando.")
+            if not logged_in:
+                log("Navegando a login de ClassPass...")
+                await page.goto("https://studios.classpass.com/login")
+                await page.wait_for_timeout(2000)
                 
-            log("Ingresando credenciales (escribiendo como humano)...")
-            email_input = page.locator('input[name="email"], input[type="email"]').first
-            await email_input.click()
-            await page.wait_for_timeout(500) # Esperar a que el foco se asiente
-            await email_input.fill("") # Asegurar que esté vacío
-            await email_input.type("reservasexternas@clubprovidencia.cl", delay=50)
-            
-            pass_input = page.locator('input[name="password"], input[type="password"]').first
-            await pass_input.click()
-            await page.wait_for_timeout(500)
-            await pass_input.fill("")
-            await pass_input.type("club123", delay=50)
-            
-            log("Haciendo clic en el botón de Iniciar sesión...")
-            await page.locator('button[type="submit"]').first.click()
-            
-            log("Esperando a que cargue el dashboard tras el login...")
-            await page.wait_for_selector('a.nav__link[href*="/classes/"]', timeout=30000)
-            
-            log("Navegando a Horario...")
-            await page.goto("https://studios.classpass.com/classes/", wait_until="networkidle")
-            
-            await page.wait_for_selector('.schedule-list__item', state="visible", timeout=30000)
+                try:
+                    await page.click('button:has-text("De acuerdo")', timeout=3000)
+                    log("Banner de cookies aceptado.")
+                except:
+                    log("Banner de cookies no encontrado, continuando.")
+                    
+                log("Ingresando credenciales (escribiendo como humano)...")
+                email_input = page.locator('input[name="email"], input[type="email"]').first
+                await email_input.click()
+                await page.wait_for_timeout(500) # Esperar a que el foco se asiente
+                await email_input.fill("") # Asegurar que esté vacío
+                await email_input.type("reservasexternas@clubprovidencia.cl", delay=50)
+                
+                pass_input = page.locator('input[name="password"], input[type="password"]').first
+                await pass_input.click()
+                await page.wait_for_timeout(500)
+                await pass_input.fill("")
+                await pass_input.type("club123", delay=50)
+                
+                log("Haciendo clic en el botón de Iniciar sesión...")
+                await page.locator('button[type="submit"]').first.click()
+                
+                log("Esperando a que cargue el dashboard tras el login...")
+                await page.wait_for_selector('a.nav__link[href*="/classes/"]', timeout=30000)
+                
+                # Guardar la sesión exitosa para las siguientes búsquedas
+                await context.storage_state(path=state_file)
+                log(f"Nueva sesión guardada en {state_file}.")
+                
+                log("Navegando a Horario...")
+                await page.goto("https://studios.classpass.com/classes/", wait_until="networkidle")
+                
+                await page.wait_for_selector('.schedule-list__item', state="visible", timeout=30000)
             
             # Pequeña pausa para asegurar que los elementos del DOM terminen de renderizar
             await page.wait_for_timeout(2000)
