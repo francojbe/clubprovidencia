@@ -251,3 +251,124 @@ async def search_user(query: str, target_time: str = None):
             await browser.close()
             
     return results
+
+async def sync_all_classes():
+    """
+    Recorre TODAS las clases del día en ClassPass y extrae
+    completamente todas las personas reservadas para la base de datos.
+    """
+    import os
+    from datetime import datetime
+    results = []
+    
+    email = os.getenv("CLASSPASS_EMAIL", "reservasexternas@clubprovidencia.cl")
+    password = os.getenv("CLASSPASS_PASSWORD", "club123")
+    
+    async with async_playwright() as p:
+        log("[Sincronización Masiva] Iniciando bot...")
+        browser = await p.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-setuid-sandbox"
+            ]
+        )
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            viewport={"width": 1280, "height": 800},
+            locale="es-CL",
+            timezone_id="America/Santiago"
+        )
+        page = await context.new_page()
+        
+        try:
+            log("Navegando a login...")
+            await page.goto("https://studios.classpass.com/login")
+            await page.wait_for_timeout(2000)
+            
+            try:
+                await page.click('button:has-text("De acuerdo")', timeout=3000)
+            except:
+                pass
+                
+            email_input = page.locator('input[name="email"], input[type="email"]').first
+            await email_input.click()
+            await page.wait_for_timeout(300)
+            await email_input.fill("")
+            await email_input.type(email, delay=30)
+            
+            pass_input = page.locator('input[name="password"], input[type="password"]').first
+            await pass_input.click()
+            await page.wait_for_timeout(300)
+            await pass_input.fill("")
+            await pass_input.type(password, delay=30)
+            
+            await page.locator('button[type="submit"]').first.click()
+            await page.wait_for_selector('a.nav__link[href*="/classes/"]', timeout=30000)
+            
+            log("Yendo a Horario...")
+            await page.goto("https://studios.classpass.com/classes/", wait_until="networkidle")
+            await page.wait_for_selector('.schedule-list__item', state="visible", timeout=30000)
+            await page.wait_for_timeout(2000)
+            
+            class_items = await page.locator('.schedule-list__item').all()
+            total_classes = len(class_items)
+            log(f"Iniciando barrido masivo de {total_classes} clases...")
+            
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            
+            for idx in range(total_classes):
+                items = await page.locator('.schedule-list__item').all()
+                if idx >= len(items): break
+                
+                item = items[idx]
+                
+                clicked_successfully = False
+                try:
+                    async with page.expect_response(lambda r: r.request.resource_type in ["fetch", "xhr"], timeout=800):
+                        await item.click(timeout=2000)
+                    await page.wait_for_timeout(150)
+                    clicked_successfully = True
+                except Exception:
+                    try:
+                        await item.click(timeout=2000)
+                        await page.wait_for_timeout(350)
+                        clicked_successfully = True
+                    except Exception as e_click:
+                        log(f"Saltando clase {idx} por inclickeable: {e_click}")
+                        
+                if not clicked_successfully:
+                    continue
+                    
+                class_name_el = page.locator('.schedule-detail p.text--semibold.text--ellipsis').first
+                class_time_el = page.locator('.schedule-detail p.text--semibold:not(.text--ellipsis)').first
+                
+                class_name = await class_name_el.text_content() if await class_name_el.count() > 0 else "Clase Desconocida"
+                class_time = await class_time_el.text_content() if await class_time_el.count() > 0 else ""
+                
+                if class_name: class_name = class_name.strip()
+                if class_time: class_time = class_time.strip()
+                
+                user_elements = await page.locator('.avatar__name').all()
+                log(f"Clase {idx+1}/{total_classes} de las {class_time} ({class_name}): Leídos {len(user_elements)} asistentes.")
+                
+                for u_el in user_elements:
+                    user_name = await u_el.text_content()
+                    if user_name:
+                        results.append({
+                            "user_name": user_name.strip(),
+                            "class_name": class_name,
+                            "class_time": class_time,
+                            "class_date": today_str
+                        })
+                        
+            log(f"Barrido completado. Total reservas encontradas: {len(results)}")
+            
+        except Exception as e:
+            log(f"Error durante sincronización masiva: {e}")
+        finally:
+            log("Cerrando navegador...")
+            await browser.close()
+            
+    return results

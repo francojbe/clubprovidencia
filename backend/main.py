@@ -4,6 +4,10 @@ from pydantic import BaseModel
 from datetime import datetime
 import json
 from typing import Optional
+import database
+
+# Inicializar Base de Datos SQLite para Caché
+database.init_db()
 
 app = FastAPI()
 
@@ -107,12 +111,71 @@ def get_client_history(client_id: int):
 
 import scraper
 
+@app.get("/api/classpass/status")
+def get_classpass_cache_status():
+    last_sync = database.get_last_sync("bulk")
+    fresh = database.is_cache_fresh(max_age_minutes=15)
+    return {
+        "last_sync": last_sync.isoformat() if last_sync else None,
+        "is_fresh": fresh,
+        "max_age_minutes": 15
+    }
+
+@app.post("/api/classpass/sync")
+async def sync_classpass_database():
+    try:
+        # 1. Ejecutar raspado masivo diario
+        results = await scraper.sync_all_classes()
+        
+        # 2. Guardar en la DB (limpiamos registros de hoy primero para evitar duplicados)
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        database.save_reservations(results, clear_date=today_str)
+        
+        # 3. Registrar metadata de sincronización
+        database.set_last_sync("bulk")
+        
+        return {
+            "status": "success", 
+            "message": f"Sincronización masiva completada con éxito. Se importaron {len(results)} reservas hoy.",
+            "count": len(results)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/classpass/search")
 async def search_classpass_rpa(q: str, time: Optional[str] = None):
-    # Triggers the Playwright bot to open the browser, login and search
     try:
+        # 1. Si el caché está fresco (menos de 15 minutos), responder inmediatamente
+        if database.is_cache_fresh(max_age_minutes=15):
+            cached_data = database.query_cache_user(q)
+            return {
+                "status": "success", 
+                "source": "cache",
+                "data": cached_data
+            }
+        
+        # 2. De lo contrario, hacer búsqueda en vivo usando el RPA
         results = await scraper.search_user(q, time)
-        return {"status": "success", "data": results}
+        
+        # 3. Guardar el resultado en caché para futuras consultas rápidas
+        if results:
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            db_entries = []
+            for r in results:
+                for c in r.get("classes", []):
+                    db_entries.append({
+                        "user_name": r["nombre"],
+                        "class_name": c["clase"],
+                        "class_time": c["horario"],
+                        "class_date": today_str
+                    })
+            database.save_reservations(db_entries)
+            
+        return {
+            "status": "success", 
+            "source": "live",
+            "data": results
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

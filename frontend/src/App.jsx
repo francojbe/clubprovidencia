@@ -624,13 +624,43 @@ function ClassPassView() {
   const [searchTime, setSearchTime] = useState('');
   const [searchResults, setSearchResults] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [searchDuration, setSearchDuration] = useState(null);
+  const [source, setSource] = useState('');
+  const [status, setStatus] = useState({ last_sync: null, is_fresh: false });
+
+  useEffect(() => {
+    fetchStatus();
+  }, []);
+
+  const fetchStatus = async () => {
+    try {
+      const res = await axios.get(`${API_BASE_URL}/api/classpass/status`);
+      setStatus(res.data);
+    } catch (e) {
+      console.error("Error al obtener estado del caché:", e);
+    }
+  };
+
+  const handleSync = async () => {
+    setIsSyncing(true);
+    try {
+      const res = await axios.post(`${API_BASE_URL}/api/classpass/sync`);
+      alert(res.data.message);
+      await fetchStatus();
+    } catch (err) {
+      alert("Error al sincronizar clases de ClassPass. Revisa que el backend esté encendido.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const handleSearch = async () => {
     if (!searchQuery) return;
     setIsLoading(true);
     setSearchResults(null);
     setSearchDuration(null);
+    setSource('');
     const startTime = performance.now();
     try {
       let url = `${API_BASE_URL}/api/classpass/search?q=${encodeURIComponent(searchQuery)}`;
@@ -639,10 +669,12 @@ function ClassPassView() {
       }
       const response = await axios.get(url);
       const endTime = performance.now();
-      setSearchDuration(((endTime - startTime) / 1000).toFixed(1));
+      setSearchDuration(((endTime - startTime) / 1000).toFixed(2));
       setSearchResults(response.data.data);
+      setSource(response.data.source || 'live');
+      await fetchStatus(); // Recargar status por si actualizó el caché
     } catch (err) {
-      alert("Error al ejecutar el RPA de ClassPass");
+      alert("Error al ejecutar la búsqueda de ClassPass");
       setSearchResults([]);
     } finally {
       setIsLoading(false);
@@ -652,8 +684,42 @@ function ClassPassView() {
   return (
     <div className="w-full max-w-4xl mx-auto">
       <div className="mb-6">
-        <h2 className="text-[32px] font-semibold text-slate-900 tracking-tight">Integración ClassPass (RPA)</h2>
-        <p className="text-slate-500 mt-2">Usa el motor RPA para buscar directamente en la plataforma de ClassPass. El bot abrirá una ventana, iniciará sesión y extraerá la información solicitada.</p>
+        <h2 className="text-[32px] font-semibold text-slate-900 tracking-tight">Integración ClassPass (RPA + DB)</h2>
+        <p className="text-slate-500 mt-2">
+          Busca alumnos registrados hoy en la base de datos local o haz una consulta en vivo a ClassPass a través del bot.
+        </p>
+      </div>
+
+      {/* Tarjeta de Estado del Caché y Sincronización Masiva */}
+      <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between bg-slate-50 border border-slate-200 rounded-xl p-5 gap-4">
+        <div>
+          <h3 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+            <span>Base de Datos de Reservas</span>
+            <span className={`inline-block w-2.5 h-2.5 rounded-full ${status.is_fresh ? 'bg-green-500 animate-pulse' : 'bg-amber-500'}`}></span>
+          </h3>
+          <p className="text-xs text-slate-500 mt-1">
+            {status.last_sync 
+              ? `Último barrido masivo: ${new Date(status.last_sync).toLocaleTimeString()} (${status.is_fresh ? 'Caché activo < 15 min' : 'Expirado, búsquedas caerán en vivo'})` 
+              : "No se ha realizado un barrido masivo hoy."}
+          </p>
+        </div>
+        
+        <button 
+          onClick={handleSync}
+          disabled={isSyncing || isLoading}
+          className="bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white px-4 py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center space-x-2 transition-all shadow-sm"
+        >
+          {isSyncing ? (
+            <>
+              <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+              <span>Mapeando Clases del Día (1-2 min)...</span>
+            </>
+          ) : (
+            <>
+              <span>⚡ Mapear Todo el Día (Búsquedas Instantáneas)</span>
+            </>
+          )}
+        </button>
       </div>
 
       <div className="flex space-x-3 mb-8">
@@ -680,7 +746,7 @@ function ClassPassView() {
         </div>
         <button 
           onClick={handleSearch} 
-          disabled={isLoading || !searchQuery}
+          disabled={isLoading || !searchQuery || isSyncing}
           className="bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white px-6 rounded-xl font-medium flex items-center justify-center min-w-[150px] transition-colors"
         >
           {isLoading ? (
@@ -689,7 +755,7 @@ function ClassPassView() {
               <span>Buscando...</span>
             </span>
           ) : (
-            "Ejecutar Bot"
+            "Buscar"
           )}
         </button>
       </div>
@@ -698,21 +764,21 @@ function ClassPassView() {
         {isLoading && (
           <div className="p-12 text-center border border-dashed border-slate-300 rounded-xl bg-slate-50">
              <div className="w-10 h-10 border-4 border-slate-300 border-t-slate-900 rounded-full animate-spin mx-auto mb-4"></div>
-             <p className="text-slate-900 font-semibold mb-1">Bot RPA en ejecución...</p>
-             <p className="text-slate-500 text-sm">El bot está iniciando sesión en ClassPass y extrayendo datos. No cierres la ventana emergente del navegador.</p>
+             <p className="text-slate-900 font-semibold mb-1">Buscando asistente...</p>
+             <p className="text-slate-500 text-sm">Si el caché está expirado, el bot se conectará a ClassPass. Esto tomará unos 25 segundos.</p>
           </div>
         )}
 
         {!isLoading && searchResults === null && (
            <div className="p-12 text-center border border-dashed border-slate-300 rounded-xl bg-slate-50">
              <Ticket className="mx-auto text-slate-300 mb-3" size={32} />
-             <p className="text-slate-500 font-medium text-sm">Ingresa un nombre y haz clic en "Ejecutar Bot".</p>
+             <p className="text-slate-500 font-medium text-sm">Ingresa un nombre para buscar reservas activas.</p>
            </div>
         )}
 
         {!isLoading && searchResults !== null && searchResults.length === 0 && (
            <div className="p-12 text-center border border-dashed border-slate-300 rounded-xl bg-slate-50">
-             <p className="text-slate-500 text-sm">El bot no encontró resultados en ClassPass para "{searchQuery}".</p>
+             <p className="text-slate-500 text-sm">No se encontraron reservas hoy en ClassPass para "{searchQuery}".</p>
            </div>
         )}
 
@@ -725,9 +791,12 @@ function ClassPassView() {
                     <h3 className="text-lg font-semibold text-slate-900">{user.nombre}</h3>
                     <p className="text-sm text-slate-500">{user.email || "Sin correo electrónico"}</p>
                   </div>
-                  <div className="text-right">
+                  <div className="text-right flex flex-col items-end gap-1.5">
+                    <span className={`inline-block text-xs font-semibold px-2.5 py-1 rounded-full ${source === 'cache' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                      {source === 'cache' ? '⚡ Caché de Base de Datos' : '🤖 Búsqueda en Vivo (RPA)'}
+                    </span>
                     <span className="inline-block bg-slate-100 text-slate-700 text-xs font-semibold px-2.5 py-1 rounded-full">
-                      {user.classes.length} clases agendadas
+                      {user.classes.length} clases hoy
                     </span>
                   </div>
                 </div>
@@ -755,7 +824,7 @@ function ClassPassView() {
             ))}
             {searchDuration && (
               <p className="text-right text-xs font-medium text-slate-400 mt-2 mr-2">
-                ⏱️ RPA completado en {searchDuration} segundos
+                ⏱️ Consulta completada en {searchDuration} segundos ({source === 'cache' ? 'instantáneo desde DB' : 'raspado en vivo'})
               </p>
             )}
           </>
