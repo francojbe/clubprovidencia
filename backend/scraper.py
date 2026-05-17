@@ -88,79 +88,48 @@ async def search_user(query: str, target_time: str = None):
                 "--disable-setuid-sandbox"
             ]
         )
-        state_file = "state.json"
-        
-        # Intentar cargar la sesión si existe para saltar el login
-        if os.path.exists(state_file):
-            context = await browser.new_context(
-                storage_state=state_file,
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                viewport={"width": 1280, "height": 800},
-                locale="es-CL",
-                timezone_id="America/Santiago"
-            )
-        else:
-            context = await browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                viewport={"width": 1280, "height": 800},
-                locale="es-CL",
-                timezone_id="America/Santiago"
-            )
-            
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            viewport={"width": 1280, "height": 800},
+            locale="es-CL",
+            timezone_id="America/Santiago"
+        )
         page = await context.new_page()
         
         try:
-            logged_in = False
-            # Si hay sesión guardada, intentar ir directo a la lista de clases
-            if os.path.exists(state_file):
-                try:
-                    log("Intentando navegar directamente usando la sesión guardada...")
-                    await page.goto("https://studios.classpass.com/classes/", wait_until="domcontentloaded")
-                    # Verificar si cargó la lista de horarios (si no, nos redireccionó al login)
-                    await page.wait_for_selector('.schedule-list__item', state="visible", timeout=6000)
-                    logged_in = True
-                    log("Sesión activa recuperada exitosamente. Saltando flujo de login.")
-                except Exception as e:
-                    log("La sesión guardada expiró o no es válida. Iniciando login desde cero...")
+            log("Navegando a login de ClassPass...")
+            await page.goto("https://studios.classpass.com/login")
+            await page.wait_for_timeout(2000)
             
-            if not logged_in:
-                log("Navegando a login de ClassPass...")
-                await page.goto("https://studios.classpass.com/login")
-                await page.wait_for_timeout(2000)
+            try:
+                await page.click('button:has-text("De acuerdo")', timeout=3000)
+                log("Banner de cookies aceptado.")
+            except:
+                log("Banner de cookies no encontrado, continuando.")
                 
-                try:
-                    await page.click('button:has-text("De acuerdo")', timeout=3000)
-                    log("Banner de cookies aceptado.")
-                except:
-                    log("Banner de cookies no encontrado, continuando.")
-                    
-                log("Ingresando credenciales (escribiendo como humano)...")
-                email_input = page.locator('input[name="email"], input[type="email"]').first
-                await email_input.click()
-                await page.wait_for_timeout(500) # Esperar a que el foco se asiente
-                await email_input.fill("") # Asegurar que esté vacío
-                await email_input.type("reservasexternas@clubprovidencia.cl", delay=50)
-                
-                pass_input = page.locator('input[name="password"], input[type="password"]').first
-                await pass_input.click()
-                await page.wait_for_timeout(500)
-                await pass_input.fill("")
-                await pass_input.type("club123", delay=50)
-                
-                log("Haciendo clic en el botón de Iniciar sesión...")
-                await page.locator('button[type="submit"]').first.click()
-                
-                log("Esperando a que cargue el dashboard tras el login...")
-                await page.wait_for_selector('a.nav__link[href*="/classes/"]', timeout=30000)
-                
-                # Guardar la sesión exitosa para las siguientes búsquedas
-                await context.storage_state(path=state_file)
-                log(f"Nueva sesión guardada en {state_file}.")
-                
-                log("Navegando a Horario...")
-                await page.goto("https://studios.classpass.com/classes/", wait_until="networkidle")
-                
-                await page.wait_for_selector('.schedule-list__item', state="visible", timeout=30000)
+            log("Ingresando credenciales (escribiendo como humano)...")
+            email_input = page.locator('input[name="email"], input[type="email"]').first
+            await email_input.click()
+            await page.wait_for_timeout(500) # Esperar a que el foco se asiente
+            await email_input.fill("") # Asegurar que esté vacío
+            await email_input.type("reservasexternas@clubprovidencia.cl", delay=50)
+            
+            pass_input = page.locator('input[name="password"], input[type="password"]').first
+            await pass_input.click()
+            await page.wait_for_timeout(500)
+            await pass_input.fill("")
+            await pass_input.type("club123", delay=50)
+            
+            log("Haciendo clic en el botón de Iniciar sesión...")
+            await page.locator('button[type="submit"]').first.click()
+            
+            log("Esperando a que cargue el dashboard tras el login...")
+            await page.wait_for_selector('a.nav__link[href*="/classes/"]', timeout=30000)
+            
+            log("Navegando a Horario...")
+            await page.goto("https://studios.classpass.com/classes/", wait_until="networkidle")
+            
+            await page.wait_for_selector('.schedule-list__item', state="visible", timeout=30000)
             
             # Pequeña pausa para asegurar que los elementos del DOM terminen de renderizar
             await page.wait_for_timeout(2000)
@@ -204,26 +173,15 @@ async def search_user(query: str, target_time: str = None):
                     else:
                         log(f"No se encontró hora en list_text: {list_text[:30]}")
                         
-                # Intentar hacer clic de forma ultra segura con timeout corto (2 segundos)
-                # Esto evita que el bot se quede pegado 30 segundos si la clase ya pasó y está deshabilitada (inclickeable)
-                clicked_successfully = False
+                # Optimización de velocidad extrema: Esperar dinámicamente la respuesta de la API en lugar de un tiempo fijo
                 try:
                     async with page.expect_response(lambda r: r.request.resource_type in ["fetch", "xhr"], timeout=800):
-                        await item.click(timeout=2000)
-                    await page.wait_for_timeout(150) # Darle 150ms a React para dibujar
-                    clicked_successfully = True
-                except Exception as e_click1:
-                    # Fallback si no hubo petición o tardó en responder
-                    try:
-                        await item.click(timeout=2000)
-                        await page.wait_for_timeout(350)
-                        clicked_successfully = True
-                    except Exception as e_click2:
-                        log(f"No se pudo hacer clic en la clase de las (inclickeable, posiblemente pasada o cancelada): {e_click2}")
-                
-                if not clicked_successfully:
-                    log("Saltando clase por no ser clickeable.")
-                    continue
+                        await item.click()
+                    await page.wait_for_timeout(150) # Darle 150ms a React para dibujar los nombres tras recibir los datos
+                except:
+                    # Si no hubo petición (datos en caché) o tardó mucho, hacemos un pequeño fallback de seguridad
+                    await item.click()
+                    await page.wait_for_timeout(350)
                 
                 class_name_el = page.locator('.schedule-detail p.text--semibold.text--ellipsis').first
                 class_time_el = page.locator('.schedule-detail p.text--semibold:not(.text--ellipsis)').first
@@ -266,9 +224,7 @@ async def search_user(query: str, target_time: str = None):
             log(f"Extracción completada. Se encontraron {len(user_classes)} reservas para este usuario.")
             
         except Exception as e:
-            import traceback
-            tb = traceback.format_exc()
-            log(f"Error durante el RPA: {e}\nTraceback:\n{tb}")
+            log(f"Error durante el RPA: {e}")
         finally:
             log("Cerrando navegador...")
             await browser.close()
