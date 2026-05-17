@@ -1,5 +1,10 @@
 from playwright.sync_api import sync_playwright
 import time
+import os
+from dotenv import load_dotenv
+
+# Cargar variables de entorno locales
+load_dotenv()
 
 def run():
     print("Iniciando modo debug...")
@@ -20,8 +25,11 @@ def run():
             except:
                 print("No se encontró banner de cookies, continuando...")
 
-            page.fill('input[name="email"], input[type="email"]', "reservasexternas@clubprovidencia.cl")
-            page.fill('input[name="password"], input[type="password"]', "club123")
+            email = os.getenv("CLASSPASS_EMAIL", "reservasexternas@clubprovidencia.cl")
+            password = os.getenv("CLASSPASS_PASSWORD", "club123")
+
+            page.fill('input[name="email"], input[type="email"]', email)
+            page.fill('input[name="password"], input[type="password"]', password)
             
             # Press enter to submit instead of clicking the button (in case it's still covered)
             page.keyboard.press("Enter")

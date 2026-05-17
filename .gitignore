@@ -3,6 +3,9 @@ backend/venv/
 backend/__pycache__/
 backend/*.pyc
 backend/bot_debug.log
+backend/.env
+backend/.env.local
+backend/.env.*
 
 # Node dependencies and build assets
 frontend/node_modules/

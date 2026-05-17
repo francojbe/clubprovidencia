@@ -1,5 +1,10 @@
 import asyncio
+import os
+from dotenv import load_dotenv
 from playwright.async_api import async_playwright
+
+# Cargar variables de entorno locales
+load_dotenv()
 
 async def sync_classpass():
     print("Iniciando bot de sincronización...")
@@ -28,8 +33,10 @@ async def sync_classpass():
             print("Iniciando sesión...")
             # Los selectores pueden variar dependiendo del código fuente de Classpass
             # Usamos get_by_label o fill genérico
-            await page.fill('input[name="email"], input[type="email"]', "reservasexternas@clubprovidencia.cl")
-            await page.fill('input[name="password"], input[type="password"]', "club123")
+            email = os.getenv("CLASSPASS_EMAIL", "reservasexternas@clubprovidencia.cl")
+            password = os.getenv("CLASSPASS_PASSWORD", "club123")
+            await page.fill('input[name="email"], input[type="email"]', email)
+            await page.fill('input[name="password"], input[type="password"]', password)
             
             # Clic en el botón de login
             await page.click('button[type="submit"]')
@@ -107,18 +114,20 @@ async def search_user(query: str, target_time: str = None):
             except:
                 log("Banner de cookies no encontrado, continuando.")
                 
-            log("Ingresando credenciales (escribiendo como humano)...")
+            email = os.getenv("CLASSPASS_EMAIL", "reservasexternas@clubprovidencia.cl")
+            password = os.getenv("CLASSPASS_PASSWORD", "club123")
+
             email_input = page.locator('input[name="email"], input[type="email"]').first
             await email_input.click()
             await page.wait_for_timeout(500) # Esperar a que el foco se asiente
             await email_input.fill("") # Asegurar que esté vacío
-            await email_input.type("reservasexternas@clubprovidencia.cl", delay=50)
+            await email_input.type(email, delay=50)
             
             pass_input = page.locator('input[name="password"], input[type="password"]').first
             await pass_input.click()
             await page.wait_for_timeout(500)
             await pass_input.fill("")
-            await pass_input.type("club123", delay=50)
+            await pass_input.type(password, delay=50)
             
             log("Haciendo clic en el botón de Iniciar sesión...")
             await page.locator('button[type="submit"]').first.click()
