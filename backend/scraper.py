@@ -356,17 +356,13 @@ async def sync_all_classes():
                 
                 clicked_successfully = False
                 try:
-                    async with page.expect_response(lambda r: r.request.resource_type in ["fetch", "xhr"], timeout=800):
-                        await item.click(timeout=2000)
-                    await page.wait_for_timeout(150)
+                    await item.scroll_into_view_if_needed()
+                    await item.click(timeout=3000)
+                    # Espera estable de 1.2s para asegurar carga de datos en la red
+                    await page.wait_for_timeout(1200)
                     clicked_successfully = True
-                except Exception:
-                    try:
-                        await item.click(timeout=2000)
-                        await page.wait_for_timeout(350)
-                        clicked_successfully = True
-                    except Exception as e_click:
-                        log(f"Saltando clase {idx} por inclickeable: {e_click}")
+                except Exception as e_click:
+                    log(f"Saltando clase {idx} por inclickeable: {e_click}")
                         
                 if not clicked_successfully:
                     continue
