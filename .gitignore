@@ -21,3 +21,7 @@ frontend/.env.production.local
 .idea/
 .DS_Store
 Thumbs.db
+
+# Databases and cache
+*.db
+backend/*.db

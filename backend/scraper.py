@@ -3,12 +3,13 @@ import os
 from datetime import datetime
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright
+from timezone_utils import get_chile_time, get_chile_timestamp_str
 
 # Cargar variables de entorno locales
 load_dotenv()
 
 def log(msg: str):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = get_chile_timestamp_str()
     log_msg = f"[{timestamp}] {msg}"
     print(log_msg)
     with open("bot_debug.log", "a", encoding="utf-8") as f:
@@ -318,7 +319,7 @@ async def sync_all_classes():
             log(f"Iniciando barrido masivo de {total_classes} clases...")
             
             # Calcular la hora actual y restar 1 hora (margen de seguridad)
-            now = datetime.now()
+            now = get_chile_time()
             import os
             mock_hour = os.getenv("MOCK_HOUR")
             if mock_hour:

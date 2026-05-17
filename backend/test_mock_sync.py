@@ -26,8 +26,8 @@ async def run_test():
         print(f"[OK] Sincronizacion completada. Se extrajeron {len(results)} reservas.")
         
         # 3. Guardar en Base de Datos
-        from datetime import datetime
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        from timezone_utils import get_chile_date_str
+        today_str = get_chile_date_str()
         database.save_reservations(results, clear_date=today_str)
         database.set_last_sync("bulk")
         print("[OK] Resultados guardados exitosamente en SQLite.")
