@@ -138,7 +138,7 @@ async def search_user(query: str, target_time: str = None):
             await page.wait_for_selector('a.nav__link[href*="/classes/"]', timeout=30000)
             
             log("Navegando a Horario...")
-            await page.goto("https://studios.classpass.com/classes/", wait_until="networkidle")
+            await page.goto("https://studios.classpass.com/classes/", wait_until="domcontentloaded")
             
             await page.wait_for_selector('.schedule-list__item', state="visible", timeout=30000)
             
@@ -310,7 +310,7 @@ async def sync_all_classes():
             await page.wait_for_selector('a.nav__link[href*="/classes/"]', timeout=30000)
             
             log("Yendo a Horario...")
-            await page.goto("https://studios.classpass.com/classes/", wait_until="networkidle")
+            await page.goto("https://studios.classpass.com/classes/", wait_until="domcontentloaded")
             await page.wait_for_selector('.schedule-list__item', state="visible", timeout=30000)
             await page.wait_for_timeout(2000)
             

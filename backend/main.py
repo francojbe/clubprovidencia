@@ -55,7 +55,7 @@ async def classpass_hourly_scheduler():
     await asyncio.sleep(10)
     while True:
         try:
-            now = datetime.now()
+            now = get_chile_time()
             if not is_within_class_hours(now):
                 print(f"[SCHEDULER] {now.strftime('%Y-%m-%d %H:%M:%S')} - Fuera del horario de clases. Sincronización automática omitida.")
             else:
@@ -65,7 +65,9 @@ async def classpass_hourly_scheduler():
                     print("[SCHEDULER] Iniciando sincronización masiva automática...")
                     results = await scraper.sync_all_classes()
                     today_str = now.strftime("%Y-%m-%d")
-                    database.save_reservations(results, clear_date=today_str)
+                    # Evitamos borrar todo el día si es tarde, para no perder el historial de clases de la mañana
+                    clear_date = today_str if now.hour < 11 else None
+                    database.save_reservations(results, clear_date=clear_date)
                     database.set_last_sync("bulk")
                     print(f"[SCHEDULER] Sincronización automática exitosa. Reservas hoy: {len(results)}")
         except Exception as e:
@@ -185,9 +187,12 @@ async def sync_classpass_database():
         # 1. Ejecutar raspado masivo diario
         results = await scraper.sync_all_classes()
         
-        # 2. Guardar en la DB (limpiamos registros de hoy primero para evitar duplicados)
+        # 2. Guardar en la DB (limpiamos registros de hoy primero para evitar duplicados, pero solo si es temprano)
         today_str = get_chile_date_str()
-        database.save_reservations(results, clear_date=today_str)
+        # Evitamos borrar todo el día si es tarde, para no perder el historial de clases de la mañana
+        now_time = get_chile_time()
+        clear_date = today_str if now_time.hour < 11 else None
+        database.save_reservations(results, clear_date=clear_date)
         
         # 3. Registrar metadata de sincronización
         database.set_last_sync("bulk")
